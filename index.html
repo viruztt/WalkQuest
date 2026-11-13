@@ -1,0 +1,207 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>WalkQuest</title>
+  <meta name="description" content="Turn treadmill walks into video-game journeys.">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🗺️</text></svg>">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="apple-touch-icon" href="icons/icon-180.png">
+  <meta name="theme-color" content="#0e1020">
+  <meta name="apple-mobile-web-app-title" content="WalkQuest">
+  <meta name="mobile-web-app-capable" content="yes">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand" data-tab="home">WALK<span>QUEST</span></div>
+    <div class="player">
+      <div class="lvl"><small>LV</small><b id="lvl">1</b></div>
+      <div class="xpwrap"><div class="xpinfo"><span id="rank">Wanderer</span><span id="xptext">0 / 120 XP</span></div><div class="xpbar"><i id="xpbar"></i></div></div>
+      <div class="stat" title="Daily streak (days in a row with a walk of 200 m+)">🔥 <b id="streak">0</b></div>
+      <div class="stat" title="Total distance">🥾 <b id="totalkm">0.0</b> km</div>
+    </div>
+  </header>
+
+  <nav class="tabs">
+    <button class="tab" data-tab="home">🗺️ Quests</button>
+    <button class="tab" data-tab="trophies">🏆 Trophies</button>
+    <button class="tab" data-tab="collection">🎒 Collection</button>
+    <button class="tab" data-tab="codex">📜 Codex</button>
+    <button class="tab" data-tab="journal">📖 Journal</button>
+    <button class="tab" data-tab="settings">⚙️ Settings</button>
+  </nav>
+
+  <main>
+    <!-- HOME -->
+    <section class="screen" id="screen-home">
+      <div class="card device">
+        <div class="device-head">
+          <div>
+            <h2>Treadmill</h2>
+            <div class="devstatus off"><span class="dot"></span>Not connected</div>
+          </div>
+          <div class="livespeed"><b id="home-speed">0.0</b><span>km/h</span></div>
+        </div>
+        <div class="row wrap">
+          <button class="btn primary" id="btn-connect">📡 Connect treadmill</button>
+          <button class="btn" id="btn-connect-all" title="Use this if your treadmill does not show up in the list">Show all Bluetooth devices</button>
+          <button class="btn ghost" id="btn-sim">🕹️ Simulator</button>
+          <button class="btn ghost" id="btn-disconnect" hidden>Disconnect</button>
+        </div>
+        <p class="warn" id="bt-warning" hidden></p>
+        <details class="devlog"><summary>Device log</summary><pre id="devlog">No messages yet.</pre></details>
+      </div>
+
+      <div class="card bounty" id="bounty"></div>
+
+      <div class="quest-head">
+        <h2 class="section-title">Choose your quest</h2>
+        <div class="filters">
+          <button class="btn small" data-filter="all">All</button>
+          <button class="btn small" data-filter="short">Short · up to 3 km</button>
+          <button class="btn small" data-filter="medium">Medium · 3–7 km</button>
+          <button class="btn small" data-filter="long">Long · 7 km+</button>
+        </div>
+      </div>
+      <div class="maps" id="maps"></div>
+    </section>
+
+    <!-- JOURNEY -->
+    <section class="screen" id="screen-journey">
+      <div class="journey-head">
+        <button class="btn ghost" id="btn-back">← Quests</button>
+        <div><h2 id="journey-title">Map</h2><div class="muted" id="journey-genre"></div></div>
+        <div class="devstatus off"><span class="dot"></span>Not connected</div>
+      </div>
+
+      <div class="mapwrap" id="mapwrap">
+        <svg id="mapsvg" viewBox="0 0 1000 600" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Quest map"></svg>
+        <div class="encounter" id="encounter" hidden>
+          <div class="enc-icon" id="enc-icon">👁️</div>
+          <div class="enc-main"><div id="enc-text"></div><div class="enc-target" id="enc-target"></div><div class="encbar"><i id="enc-bar"></i></div></div>
+        </div>
+        <div class="paused" id="paused" hidden>⏸ Belt stopped</div>
+      </div>
+
+      <div class="progress">
+        <div class="progbar"><i id="progfill"></i><div id="progticks"></div></div>
+        <div class="progrow"><span id="progtext"></span><span id="nextlm"></span></div>
+      </div>
+
+      <div class="card nowpassing" id="nowpassing"></div>
+
+      <div id="idle-panel" class="card">
+        <p id="idle-tagline" class="tagline"></p>
+        <p id="idle-intro" class="intro"></p>
+        <p id="idle-meta" class="muted"></p>
+        <div class="row wrap">
+          <button class="btn primary big" id="btn-start">▶ Begin quest</button>
+          <button class="btn ghost" id="btn-restart" hidden>Restart map from the beginning</button>
+          <button class="btn ghost" onclick="document.getElementById('btn-sim').click()">🕹️ Use simulator</button>
+        </div>
+        <p class="muted small" id="start-hint"></p>
+      </div>
+
+      <div id="active-panel" hidden>
+        <div class="hud">
+          <div class="hudbox main"><b id="hud-speed">0.0</b><span>km/h</span></div>
+          <div class="hudbox"><b id="hud-dist">0.00</b><span>km this walk</span></div>
+          <div class="hudbox"><b id="hud-time">0:00</b><span>moving time</span></div>
+          <div class="hudbox"><b id="hud-pace">–:––</b><span>min/km</span></div>
+          <div class="hudbox"><b id="hud-avg">0.0</b><span>avg km/h</span></div>
+          <div class="hudbox"><b id="hud-kcal">0</b><span>kcal</span></div>
+          <div class="hudbox"><b id="hud-steps">–</b><span>steps</span></div>
+          <div class="hudbox xp"><b id="hud-xp">0</b><span>XP earned</span></div>
+        </div>
+        <div class="card simonly sim" hidden>
+          <div class="row wrap">
+            <label>Simulated speed <b id="sim-speed-v">4.0</b> km/h <input type="range" id="sim-speed" min="0" max="8" step="0.1" value="4"></label>
+            <div class="row">Time: <button class="btn small active" data-warp="1">1×</button><button class="btn small" data-warp="10">10×</button><button class="btn small" data-warp="60">60×</button></div>
+          </div>
+        </div>
+        <div class="row end"><button class="btn danger" id="btn-end">■ End walk</button></div>
+        <h3>Quest log</h3>
+        <div class="feed" id="feed"></div>
+      </div>
+
+      <h3 class="route-title">Route <span class="muted small">(tap a discovered place to read about it)</span></h3>
+      <div class="routelist" id="routelist"></div>
+    </section>
+
+    <!-- TROPHIES -->
+    <section class="screen" id="screen-trophies">
+      <h2 class="section-title">Records</h2>
+      <div class="records" id="records"></div>
+      <h2 class="section-title">Achievements <span class="muted" id="ach-count"></span></h2>
+      <div class="achievements" id="achievements"></div>
+    </section>
+
+    <!-- COLLECTION -->
+    <section class="screen" id="screen-collection">
+      <h2 class="section-title">Collection <span class="muted" id="col-count"></span></h2>
+      <p class="muted">Items glitter (✦) along each route. Walk past them to pick them up.</p>
+      <div id="collection"></div>
+    </section>
+
+    <!-- CODEX -->
+    <section class="screen" id="screen-codex">
+      <h2 class="section-title">Codex <span class="muted" id="codex-count"></span></h2>
+      <p class="muted">Every place you've discovered, with its story. Undiscovered places stay hidden until you walk there.</p>
+      <div id="codex"></div>
+    </section>
+
+    <!-- JOURNAL -->
+    <section class="screen" id="screen-journal">
+      <h2 class="section-title">Last 7 weeks</h2>
+      <div class="heatmap" id="heatmap"></div>
+      <p id="week"></p>
+      <h2 class="section-title">Walk history</h2>
+      <div id="history"></div>
+    </section>
+
+    <!-- SETTINGS -->
+    <section class="screen" id="screen-settings">
+      <h2 class="section-title">Settings</h2>
+      <div class="card settings">
+        <label>Body weight (kg), used for calorie estimates <input type="number" id="set-weight" min="30" max="250"></label>
+        <label>Highest speed you're comfortable at (km/h). Encounters never ask for more. <input type="number" id="set-max" min="3" max="20" step="0.5"></label>
+        <label class="check"><input type="checkbox" id="set-sound"> Sound effects</label>
+        <label class="check"><input type="checkbox" id="set-enc"> Encounters (short speed challenges during walks)</label>
+        <label class="check"><input type="checkbox" id="set-unlock"> Unlock all maps</label>
+        <label class="check"><input type="checkbox" id="set-debug"> Log raw Bluetooth data (for troubleshooting)</label>
+      </div>
+      <div class="card settings">
+        <h3>Your data</h3>
+        <p class="muted">Everything is stored in this browser only. Export a backup to move it to another computer.</p>
+        <div class="row wrap">
+          <button class="btn" id="btn-export">⬇ Export backup</button>
+          <label class="btn">⬆ Import backup <input type="file" id="file-import" accept="application/json" hidden></label>
+          <button class="btn danger" id="btn-reset">Erase all progress</button>
+        </div>
+      </div>
+      <div class="card settings">
+        <h3>Connecting your treadmill</h3>
+        <ol class="muted">
+          <li>Use Chrome or Edge on a computer or Android phone (Web Bluetooth). Safari and Firefox don't support it.</li>
+          <li>Close the treadmill's own phone app first. Most treadmills accept only one Bluetooth connection.</li>
+          <li>Switch the treadmill on, then press <b>Connect treadmill</b> and choose it from the list.</li>
+          <li>If it doesn't appear, try <b>Show all Bluetooth devices</b>. If it connects but no speed shows, open the Device log and share it.</li>
+        </ol>
+      </div>
+    </section>
+  </main>
+
+  <div class="modal" id="modal" hidden><div class="modal-card" id="modal-body"></div></div>
+  <div id="toasts"></div>
+
+  <script src="js/maps.js"></script>
+  <script src="js/maps-extra.js"></script>
+  <script src="js/lore.js"></script>
+  <script src="js/devices.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
