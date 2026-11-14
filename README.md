@@ -24,6 +24,8 @@ Close the treadmill's own phone app before connecting: most treadmills accept on
 
 It can be installed as an app (Chrome's "Install app" / "Add to Home screen"); it has its own manifest and icon.
 
+On phones it works like an app: a tab bar along the bottom, a walk bar with speed, slower/faster and STOP while you walk, pop-ups as bottom sheets you can swipe down, and a saved copy of the app (`sw.js`) so the installed app opens even without a connection. Held sideways on the treadmill console, the map and the controls sit side by side.
+
 ## What's in it
 
 - 12 original maps from 1 km to 15 km (retro platformer, foggy horror town, cyberpunk city, zombie-outbreak city, pirate islands, derelict space station, gothic manor, fantasy kingdom, desert tombs, dark-fantasy wasteland, Nordic mountains, deep-sea ruins). Longer maps unlock as your lifetime distance grows. Filter by short / medium / long.
@@ -32,14 +34,15 @@ It can be installed as an app (Chrome's "Install app" / "Add to Home screen"); i
 - Progress on a map is saved, so a 12 km quest can be split over several walks.
 - Landmarks with lore, collectibles along the route, and **encounters**: short speed challenges ("hold 5.0 km/h for 60 s to escape").
 - XP, levels and ranks, 34 achievements, daily streak, 7-week heatmap, walk history.
+- **Speed control** from the app: ±0.1 / ±0.5 buttons, presets, Start belt and a big STOP button, plus keyboard shortcuts (Up/Down arrows, Shift for 0.5 steps, Esc to stop). Speeds are capped at the maximum set in Settings and at the treadmill's own reported range. During an encounter, **Match speed** sets the belt to the target. Uses the FTMS Control Point; FitShow-protocol treadmills get experimental set-speed and stop only. The treadmill's own stop button and safety key always work as usual.
 - Simulator with 10x / 60x time warp for trying it without the treadmill.
 - All data stays in the browser (localStorage). Export/import a JSON backup in Settings.
 
 ## Files
 
-- `index.html`, `css/style.css`, `manifest.webmanifest`, `icons/`
+- `index.html`, `css/style.css`, `manifest.webmanifest`, `sw.js` (offline copy of the app), `icons/`
 - `js/maps.js`: the first six maps and scenery painters.
 - `js/maps-extra.js`: six more maps with their scenery painters. Add new maps here.
 - `js/lore.js`: intros and sights for the first six maps.
-- `js/devices.js`: Bluetooth (FTMS + FitShow) and simulator.
+- `js/devices.js`: Bluetooth (FTMS + FitShow) data, speed control and the simulator.
 - `js/app.js`: game logic and UI.

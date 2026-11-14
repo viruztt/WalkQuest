@@ -11,7 +11,7 @@
   const KEY = 'walkquest.v1';
   const defaults = () => ({
     version: 1,
-    profile: { xp: 0, weightKg: 75, maxSpeed: 6, sound: true, unlockAll: false, encountersOn: true, encounterWins: 0, encounterTotal: 0 },
+    profile: { xp: 0, weightKg: 75, maxSpeed: 6, sound: true, unlockAll: false, encountersOn: true, stopOnEnd: true, encounterWins: 0, encounterTotal: 0 },
     progress: {},     // mapId -> { distanceM, completions, landmarks: [idx], runCollect: [idx] }
     collection: {},   // "mapId:idx" -> ISO date first found
     achievements: {}, // id -> ISO date
@@ -203,6 +203,7 @@
     const el = document.createElement('div');
     el.className = 'toast ' + kind;
     el.innerHTML = `<div class="toast-icon">${icon}</div><div><div class="toast-title">${esc(title)}</div>${body ? `<div class="toast-body">${esc(body)}</div>` : ''}</div>`;
+    el.addEventListener('click', () => { el.classList.add('out'); setTimeout(() => el.remove(), 400); });
     $('#toasts').appendChild(el);
     setTimeout(() => el.classList.add('out'), 5200);
     setTimeout(() => el.remove(), 5800);
@@ -221,6 +222,7 @@
     $('#lvl').textContent = lvl;
     $('#rank').textContent = rankFor(lvl);
     $('#xpbar').style.width = `${((xp - a) / (b - a)) * 100}%`;
+    $('#xpline').style.width = `${((xp - a) / (b - a)) * 100}%`;
     $('#xptext').textContent = `${xp - a} / ${b - a} XP`;
     $('#streak').textContent = streak();
     $('#totalkm').textContent = totalKm().toFixed(1);
@@ -257,8 +259,66 @@
     $('#bt-warning').textContent = av.ok ? '' : av.reason;
     $('#btn-disconnect').hidden = !st.connected;
     $$('.simonly').forEach((el) => (el.hidden = st.kind !== 'sim'));
+    if (!st.connected) targetSpeed = null;
+    renderSpeedCtl();
     updateStartButton();
   }
+
+  // ================= Speed control =================
+  let targetSpeed = null, sendTimer = null, sending = false;
+  const maxAllowed = () => Math.min(db.profile.maxSpeed, Dev.state.range.max);
+  function renderSpeedCtl() {
+    const st = Dev.state, on = st.connected && st.canControl;
+    $$('.speedctl').forEach((el) => {
+      el.hidden = !on;
+      if (!on) return;
+      $('.spd-val', el).textContent = targetSpeed == null ? '–' : targetSpeed.toFixed(1);
+      $('.spd-kind', el).textContent = st.controlKind === 'fitshow' ? 'experimental for this treadmill' : st.controlKind === 'sim' ? 'simulator' : '';
+      $('.spd-start', el).hidden = !st.canStart;
+      const max = maxAllowed();
+      const presets = [2, 3, 3.5, 4, 4.5, 5, 5.5, 6, 7, 8].filter((v) => v <= max && v >= st.range.min);
+      const key = presets.join(',') + '|' + targetSpeed;
+      if (el.dataset.key !== key) {
+        el.dataset.key = key;
+        $('.spd-presets', el).innerHTML = presets.map((v) => `<button class="btn small ${targetSpeed === v ? 'active' : ''}" data-spdset="${v}">${v.toFixed(1)}</button>`).join('');
+      }
+      $('.spd-note', el).textContent = `Capped at ${max.toFixed(1)} km/h (change in Settings). Keyboard: Up/Down arrows change speed, Esc stops the belt.`;
+    });
+    const wt = $('#wb-target'); if (wt) wt.textContent = targetSpeed == null ? '–' : targetSpeed.toFixed(1);
+    const mb = $('#enc-match');
+    if (mb) mb.hidden = !on || !(session && session.encounter) || session.encounter.target > maxAllowed();
+  }
+  function queueSpeed(v) {
+    const max = maxAllowed();
+    targetSpeed = Math.round(Math.max(Dev.state.range.min, Math.min(max, v)) * 10) / 10;
+    renderSpeedCtl();
+    clearTimeout(sendTimer);
+    sendTimer = setTimeout(sendSpeed, 350); // let quick taps add up before sending
+  }
+  async function sendSpeed() {
+    if (sending) { sendTimer = setTimeout(sendSpeed, 200); return; }
+    sending = true;
+    const v = targetSpeed;
+    try { if (v != null) await Dev.setSpeed(v, maxAllowed()); }
+    catch (e) { toast('⚠️', 'Speed not changed', e.message || String(e), 'bad'); }
+    finally { sending = false; sendTimer = null; }
+  }
+  function nudgeSpeed(delta) {
+    const base = targetSpeed != null ? targetSpeed : Math.max(live.speed || 0, Dev.state.range.min);
+    queueSpeed(base + delta);
+  }
+  async function belt(action) {
+    try {
+      if (action === 'stop') { clearTimeout(sendTimer); sendTimer = null; targetSpeed = null; await Dev.stopBelt(); toast('🛑', 'Stopping belt', ''); }
+      else { await Dev.startBelt(); toast('▶️', 'Starting belt', 'It will start slowly. Set your speed once it moves.'); }
+    } catch (e) { toast('⚠️', action === 'stop' ? 'Could not stop the belt' : 'Could not start the belt', (e.message || String(e)) + (action === 'stop' ? ' Use the treadmill\'s own stop button.' : ''), 'bad'); }
+    renderSpeedCtl();
+  }
+  Dev.on('control', (c) => {
+    if (c.type === 'target' && !sendTimer && !sending) targetSpeed = c.speed || null;
+    if (c.type === 'stopped') targetSpeed = null;
+    renderSpeedCtl();
+  });
   async function connect(showAll) {
     try {
       await Dev.connectTreadmill({ showAll });
@@ -314,6 +374,7 @@
       feed(m.landmarks[0].icon, `<b>${esc(m.landmarks[0].name)}</b>: ${esc(m.landmarks[0].lore)}`, 'lore', true);
       if (m.intro) feed('📖', esc(m.intro), 'lore', true);
     } else feed('🔖', `You pick up the trail at ${fmtKm(session.startProgressM)} km.`, 'lore');
+    document.body.classList.add('walking');
     renderJourneyActive();
   }
 
@@ -435,6 +496,7 @@
 
   function endWalk() {
     if (!session) return;
+    if (db.profile.stopOnEnd && Dev.state.connected && Dev.state.canControl && (live.speed || 0) > 0.2) belt('stop');
     const m = MAPS.find((x) => x.id === session.mapId);
     session.done = true;
     const rec = {
@@ -452,6 +514,8 @@
     const fresh = rec.distanceM >= 50 ? checkAchievements() : [];
     fresh.forEach((a) => addXp(50));
     session = null;
+    document.body.classList.remove('walking');
+    $('#walkbar').hidden = true;
     releaseWakeLock();
     showSummary(rec, s, m, fresh);
     renderHeader();
@@ -582,6 +646,12 @@
       $('#hud-kcal').textContent = Math.round(session.kcalDev > 0 ? session.kcalDev : estKcal(session.distanceM));
       $('#hud-steps').textContent = session.steps != null ? session.steps : '–';
       $('#hud-xp').textContent = session.xp;
+      const wb = $('#walkbar');
+      wb.hidden = false;
+      wb.classList.toggle('noctl', !(Dev.state.connected && Dev.state.canControl));
+      $('#wb-speed').textContent = (live.speed || 0).toFixed(1);
+      $('#wb-dist').textContent = fmtKm(session.distanceM);
+      $('#wb-time').textContent = fmtTime(session.movingS);
       const e = session.encounter, box = $('#encounter');
       if (e) {
         box.hidden = false;
@@ -592,6 +662,7 @@
         $('#enc-target').textContent = `${ok ? 'Holding' : 'Speed up to'} ${e.target.toFixed(1)} km/h · ${Math.ceil(e.need - e.held)} s to escape · ${Math.ceil(e.left)} s left`;
         $('#enc-bar').style.width = `${(e.held / e.need) * 100}%`;
       } else box.hidden = true;
+      renderSpeedCtl();
       $('#paused').hidden = !(live.speed < 0.2 && !session.completed);
       $('#btn-end').textContent = session.completed ? '🏁 Finish & save' : '■ End walk';
     }
@@ -767,12 +838,22 @@
     $('#set-max').value = db.profile.maxSpeed;
     $('#set-sound').checked = db.profile.sound;
     $('#set-enc').checked = db.profile.encountersOn;
+    $('#set-stopend').checked = db.profile.stopOnEnd;
     $('#set-unlock').checked = db.profile.unlockAll;
   }
 
   // ================= Navigation =================
+  const ORDER = ['home', 'codex', 'collection', 'trophies', 'journal', 'settings', 'journey'];
+  let currentScreen = 'home';
   function show(screen) {
-    $$('.screen').forEach((s) => s.classList.toggle('active', s.id === 'screen-' + screen));
+    const dir = ORDER.indexOf(screen) >= ORDER.indexOf(currentScreen) ? 'wq-fwd' : 'wq-back';
+    const same = screen === currentScreen;
+    currentScreen = screen;
+    $$('.screen').forEach((s) => {
+      s.classList.toggle('active', s.id === 'screen-' + screen);
+      s.classList.remove('wq-fwd', 'wq-back');
+      if (!same && s.id === 'screen-' + screen) { void s.offsetWidth; s.classList.add(dir); }
+    });
     $$('.tab').forEach((t) => t.classList.toggle('active', t.dataset.tab === screen));
     if (screen === 'home') renderMaps();
     if (screen === 'trophies') renderTrophies();
@@ -783,8 +864,35 @@
     window.scrollTo(0, 0);
   }
 
+  // ================= Phone niceties =================
+  // Bottom sheets: drag down from the top of the sheet to close it.
+  function sheetSwipe() {
+    const card = $('#modal-body');
+    let y0 = null, dy = 0;
+    card.addEventListener('touchstart', (e) => { if (card.scrollTop > 0 || !window.matchMedia('(max-width: 700px)').matches) { y0 = null; return; } y0 = e.touches[0].clientY; dy = 0; card.style.transition = 'none'; }, { passive: true });
+    card.addEventListener('touchmove', (e) => {
+      if (y0 === null) return;
+      dy = Math.max(0, e.touches[0].clientY - y0);
+      card.style.transform = dy ? `translateY(${dy}px)` : '';
+    }, { passive: true });
+    card.addEventListener('touchend', () => {
+      if (y0 === null) return;
+      card.style.transition = 'transform .2s ease-out';
+      if (dy > 90) { card.style.transform = 'translateY(100%)'; setTimeout(() => { $('#modal').hidden = true; card.style.transform = ''; card.style.transition = ''; }, 200); }
+      else card.style.transform = '';
+      y0 = null;
+    });
+  }
+  // Keep a copy of the app so the installed app opens at once and works without a connection.
+  function registerWorker() {
+    if (!('serviceWorker' in navigator) || !/^https?:$/.test(location.protocol)) return;
+    navigator.serviceWorker.register('sw.js').catch(() => {});
+  }
+
   // ================= Wire up =================
   function init() {
+    sheetSwipe();
+    registerWorker();
     document.addEventListener('click', (e) => {
       const lmEl = e.target.closest('#mapsvg [data-lm], #routelist [data-lore]');
       if (lmEl && currentMap) { showLore(currentMap, +(lmEl.dataset.lm ?? lmEl.dataset.lore)); return; }
@@ -802,18 +910,33 @@
     });
     $('#btn-connect').onclick = () => connect(false);
     $('#btn-connect-all').onclick = () => connect(true);
-    $('#btn-sim').onclick = () => { Dev.startSim(); toast('🕹️', 'Simulator on', 'Use the speed slider during a walk. Turbo speeds up time for testing.'); };
+    $('#btn-sim').onclick = () => { Dev.startSim(); toast('🕹️', 'Simulator on', 'Use the speed controls to walk faster or slower. 10× and 60× speed up time for testing.'); };
     $('#btn-disconnect').onclick = () => Dev.disconnect();
+    document.addEventListener('click', (e) => {
+      const b = e.target.closest('[data-spd],[data-spdset],[data-belt],#enc-match');
+      if (!b) return;
+      if (b.dataset.spd) nudgeSpeed(+b.dataset.spd);
+      else if (b.dataset.spdset) queueSpeed(+b.dataset.spdset);
+      else if (b.dataset.belt) belt(b.dataset.belt);
+      else if (b.id === 'enc-match' && session && session.encounter) queueSpeed(session.encounter.target);
+    });
+    document.addEventListener('keydown', (e) => {
+      if (!Dev.state.connected || !Dev.state.canControl) return;
+      if (e.target.closest && e.target.closest('input, textarea, select')) return;
+      if (e.key === 'Escape') { e.preventDefault(); belt('stop'); }
+      else if (e.key === 'ArrowUp') { e.preventDefault(); nudgeSpeed(e.shiftKey ? 0.5 : 0.1); }
+      else if (e.key === 'ArrowDown') { e.preventDefault(); nudgeSpeed(e.shiftKey ? -0.5 : -0.1); }
+    });
     $('#btn-start').onclick = startWalk;
     $('#btn-restart').onclick = () => { const p = prog(currentMap.id); p.distanceM = 0; p.landmarks = []; p.runCollect = []; save(); shownFrac = 0; renderMarkers(); renderJourneyIdle(); };
     $('#btn-end').onclick = () => { if (session.completed || confirm('End this walk? Your progress on the map is kept.')) endWalk(); };
     $('#btn-back').onclick = () => { if (session && !confirmLeave()) return; show('home'); };
-    $('#sim-speed').oninput = (e) => { Dev.setSim({ speed: +e.target.value }); $('#sim-speed-v').textContent = (+e.target.value).toFixed(1); };
     $$('[data-warp]').forEach((b) => (b.onclick = () => { Dev.setSim({ warp: +b.dataset.warp }); $$('[data-warp]').forEach((x) => x.classList.toggle('active', x === b)); }));
     $('#set-weight').onchange = (e) => { db.profile.weightKg = Math.max(30, Math.min(250, +e.target.value || 75)); save(); };
-    $('#set-max').onchange = (e) => { db.profile.maxSpeed = Math.max(3, Math.min(20, +e.target.value || 6)); save(); };
+    $('#set-max').onchange = (e) => { db.profile.maxSpeed = Math.max(3, Math.min(20, +e.target.value || 6)); save(); renderSpeedCtl(); };
     $('#set-sound').onchange = (e) => { db.profile.sound = e.target.checked; save(); };
     $('#set-enc').onchange = (e) => { db.profile.encountersOn = e.target.checked; save(); };
+    $('#set-stopend').onchange = (e) => { db.profile.stopOnEnd = e.target.checked; save(); };
     $('#set-unlock').onchange = (e) => { db.profile.unlockAll = e.target.checked; save(); };
     $('#set-debug').onchange = (e) => { window.WQ_DEBUG = e.target.checked; };
     $('#btn-export').onclick = () => {

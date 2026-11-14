@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>WalkQuest</title>
   <meta name="description" content="Turn treadmill walks into video-game journeys.">
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🗺️</text></svg>">
@@ -11,6 +11,8 @@
   <meta name="theme-color" content="#0e1020">
   <meta name="apple-mobile-web-app-title" content="WalkQuest">
   <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="css/style.css">
@@ -23,7 +25,9 @@
       <div class="xpwrap"><div class="xpinfo"><span id="rank">Wanderer</span><span id="xptext">0 / 120 XP</span></div><div class="xpbar"><i id="xpbar"></i></div></div>
       <div class="stat" title="Daily streak (days in a row with a walk of 200 m+)">🔥 <b id="streak">0</b></div>
       <div class="stat" title="Total distance">🥾 <b id="totalkm">0.0</b> km</div>
+      <button class="iconbtn gear" data-tab="settings" aria-label="Settings">⚙️</button>
     </div>
+    <div class="xpline"><i id="xpline"></i></div>
   </header>
 
   <nav class="tabs">
@@ -53,6 +57,22 @@
           <button class="btn ghost" id="btn-disconnect" hidden>Disconnect</button>
         </div>
         <p class="warn" id="bt-warning" hidden></p>
+        <div class="card speedctl" hidden>
+          <div class="spd-head"><b>Speed control</b><span class="muted small spd-kind"></span></div>
+          <div class="spd-row">
+            <button class="btn spd" data-spd="-0.5">−0.5</button>
+            <button class="btn spd" data-spd="-0.1">−0.1</button>
+            <div class="spd-target"><b class="spd-val">–</b><span>target km/h</span></div>
+            <button class="btn spd" data-spd="0.1">+0.1</button>
+            <button class="btn spd" data-spd="0.5">+0.5</button>
+          </div>
+          <div class="spd-presets"></div>
+          <div class="spd-actions">
+            <button class="btn primary spd-start" data-belt="start">▶ Start belt</button>
+            <button class="btn stopbig" data-belt="stop">■ STOP</button>
+          </div>
+          <div class="muted small spd-note"></div>
+        </div>
         <details class="devlog"><summary>Device log</summary><pre id="devlog">No messages yet.</pre></details>
       </div>
 
@@ -83,6 +103,7 @@
         <div class="encounter" id="encounter" hidden>
           <div class="enc-icon" id="enc-icon">👁️</div>
           <div class="enc-main"><div id="enc-text"></div><div class="enc-target" id="enc-target"></div><div class="encbar"><i id="enc-bar"></i></div></div>
+          <button class="btn small enc-match" id="enc-match" hidden>⚡ Match speed</button>
         </div>
         <div class="paused" id="paused" hidden>⏸ Belt stopped</div>
       </div>
@@ -91,6 +112,23 @@
         <div class="progbar"><i id="progfill"></i><div id="progticks"></div></div>
         <div class="progrow"><span id="progtext"></span><span id="nextlm"></span></div>
       </div>
+
+      <div class="card speedctl" hidden>
+          <div class="spd-head"><b>Speed control</b><span class="muted small spd-kind"></span></div>
+          <div class="spd-row">
+            <button class="btn spd" data-spd="-0.5">−0.5</button>
+            <button class="btn spd" data-spd="-0.1">−0.1</button>
+            <div class="spd-target"><b class="spd-val">–</b><span>target km/h</span></div>
+            <button class="btn spd" data-spd="0.1">+0.1</button>
+            <button class="btn spd" data-spd="0.5">+0.5</button>
+          </div>
+          <div class="spd-presets"></div>
+          <div class="spd-actions">
+            <button class="btn primary spd-start" data-belt="start">▶ Start belt</button>
+            <button class="btn stopbig" data-belt="stop">■ STOP</button>
+          </div>
+          <div class="muted small spd-note"></div>
+        </div>
 
       <div class="card nowpassing" id="nowpassing"></div>
 
@@ -119,7 +157,7 @@
         </div>
         <div class="card simonly sim" hidden>
           <div class="row wrap">
-            <label>Simulated speed <b id="sim-speed-v">4.0</b> km/h <input type="range" id="sim-speed" min="0" max="8" step="0.1" value="4"></label>
+            <span class="muted">Simulator: change speed with the speed controls above.</span>
             <div class="row">Time: <button class="btn small active" data-warp="1">1×</button><button class="btn small" data-warp="10">10×</button><button class="btn small" data-warp="60">60×</button></div>
           </div>
         </div>
@@ -171,6 +209,7 @@
         <label>Highest speed you're comfortable at (km/h). Encounters never ask for more. <input type="number" id="set-max" min="3" max="20" step="0.5"></label>
         <label class="check"><input type="checkbox" id="set-sound"> Sound effects</label>
         <label class="check"><input type="checkbox" id="set-enc"> Encounters (short speed challenges during walks)</label>
+        <label class="check"><input type="checkbox" id="set-stopend"> Stop the belt when I end a walk (if the treadmill accepts speed control)</label>
         <label class="check"><input type="checkbox" id="set-unlock"> Unlock all maps</label>
         <label class="check"><input type="checkbox" id="set-debug"> Log raw Bluetooth data (for troubleshooting)</label>
       </div>
@@ -194,6 +233,28 @@
       </div>
     </section>
   </main>
+
+  <!-- Phones: tab bar along the bottom, in thumb reach -->
+  <nav class="tabbar" aria-label="Sections">
+    <button class="tab" data-tab="home"><span>🗺️</span>Quests</button>
+    <button class="tab" data-tab="codex"><span>📜</span>Codex</button>
+    <button class="tab" data-tab="collection"><span>🎒</span>Bag</button>
+    <button class="tab" data-tab="trophies"><span>🏆</span>Trophies</button>
+    <button class="tab" data-tab="journal"><span>📖</span>Journal</button>
+  </nav>
+
+  <!-- Phones, during a walk: speed and the controls you need most, in thumb reach -->
+  <div class="walkbar" id="walkbar" hidden>
+    <div class="wb-stat"><b id="wb-speed">0.0</b><span>km/h</span></div>
+    <div class="wb-stat"><b id="wb-dist">0.00</b><span>km</span></div>
+    <div class="wb-stat wb-time"><b id="wb-time">0:00</b><span>time</span></div>
+    <div class="wb-ctl">
+      <button class="btn wb-btn" data-spd="-0.1" aria-label="Slower">−</button>
+      <div class="wb-target"><b class="spd-val" id="wb-target">–</b><span>target</span></div>
+      <button class="btn wb-btn" data-spd="0.1" aria-label="Faster">+</button>
+      <button class="btn stopbig wb-stop" data-belt="stop">STOP</button>
+    </div>
+  </div>
 
   <div class="modal" id="modal" hidden><div class="modal-card" id="modal-body"></div></div>
   <div id="toasts"></div>

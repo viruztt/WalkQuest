@@ -60,7 +60,7 @@ main { max-width: 1180px; margin: 0 auto; padding: 0 20px 60px; }
 /* ---------- cards / buttons ---------- */
 .card { background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 16px 18px; margin-bottom: 14px; }
 .btn { background: var(--card2); border: 1px solid var(--line); padding: 9px 14px; border-radius: 10px; cursor: pointer; font-weight: 600; display: inline-flex; align-items: center; gap: 6px; transition: transform .08s, filter .15s; }
-.btn:hover:not(:disabled) { filter: brightness(1.2); }
+@media (hover: hover) { .btn:hover:not(:disabled) { filter: brightness(1.2); } }
 .btn:active:not(:disabled) { transform: translateY(1px); }
 .btn:disabled { opacity: .45; cursor: not-allowed; }
 .btn.primary { background: linear-gradient(135deg, var(--accent), #5b8cff); border-color: transparent; box-shadow: 0 4px 0 #0008; }
@@ -87,7 +87,7 @@ main { max-width: 1180px; margin: 0 auto; padding: 0 20px 60px; }
 /* ---------- map cards ---------- */
 .maps { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 16px; }
 .mapcard { position: relative; text-align: left; padding: 0; border: 2px solid var(--line); border-radius: 18px; overflow: hidden; background: var(--card); cursor: pointer; transition: transform .15s, border-color .15s, box-shadow .15s; }
-.mapcard:hover:not(:disabled) { transform: translateY(-3px); border-color: var(--accent); box-shadow: 0 10px 30px #0008; }
+@media (hover: hover) { .mapcard:hover:not(:disabled) { transform: translateY(-3px); border-color: var(--accent); box-shadow: 0 10px 30px #0008; } }
 .mapcard svg { display: block; width: 100%; height: 150px; }
 .mapcard-km { position: absolute; top: 10px; right: 10px; font-family: var(--pixel); font-size: 11px; background: #000b; padding: 7px 9px; border-radius: 8px; }
 .mapcard-clear { position: absolute; top: 10px; left: 10px; background: #000b; padding: 4px 9px; border-radius: 8px; font-size: .85rem; }
@@ -271,7 +271,25 @@ main { max-width: 1180px; margin: 0 auto; padding: 0 20px 60px; }
 .aurora { animation: aurora 8s ease-in-out infinite; }
 @keyframes aurora { 50% { opacity: .15; transform: translateY(10px); } }
 
+/* ---------- speed control ---------- */
+.speedctl { border-color: var(--map-accent); }
+.device .speedctl { margin: 14px 0 0; background: var(--bg2); }
+.spd-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 10px; }
+.spd-row { display: flex; align-items: center; gap: 8px; justify-content: center; }
+.btn.spd { min-width: 64px; justify-content: center; font-size: 1.05rem; padding: 12px 10px; }
+.spd-target { text-align: center; min-width: 120px; }
+.spd-target b { display: block; font-family: var(--pixel); font-size: 28px; }
+.spd-target span { color: var(--muted); font-size: .78rem; }
+.spd-presets { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; margin: 12px 0; }
+.spd-actions { display: flex; gap: 10px; }
+.spd-actions .btn { flex: 1; justify-content: center; padding: 12px; }
+.btn.stopbig { background: #c62828; border-color: #ff5d73; color: #fff; font-weight: 800; font-size: 1.1rem; letter-spacing: 1px; box-shadow: 0 4px 0 #5a0b0b; }
+.spd-note { text-align: center; margin-top: 8px; }
+.enc-match { background: var(--good); color: #062; border-color: transparent; white-space: nowrap; }
+
 @media (max-width: 640px) {
+  .btn.spd { min-width: 0; flex: 1; }
+  .spd-target { min-width: 90px; }
   .bounty { flex-wrap: wrap; }
   .topbar { padding: 10px 16px; }
   main, .tabs { padding-left: 16px; padding-right: 16px; }
@@ -282,3 +300,171 @@ main { max-width: 1180px; margin: 0 auto; padding: 0 20px 60px; }
   .encounter { position: static; border-radius: 0; }
 }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
+
+/* ================= Phones and app feel ================= */
+html { -webkit-tap-highlight-color: transparent; }
+.iconbtn { background: none; border: 0; font-size: 1.3rem; padding: 6px; cursor: pointer; line-height: 1; }
+.gear, .tabbar, .walkbar, .xpline { display: none; }
+@media (hover: none) {
+  :is(button, .btn, summary, .mapcard, .rl):active:not(:disabled) { opacity: .65; transition: opacity 0s; }
+  :is(button, .btn, summary, .tabbar, .walkbar) { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+}
+@media (display-mode: standalone) { html, body { overscroll-behavior-y: contain; } }
+
+@keyframes wqFromRight { from { opacity: 0; transform: translateX(32px); } }
+@keyframes wqFromLeft { from { opacity: 0; transform: translateX(-32px); } }
+@keyframes wqSheetUp { from { transform: translateY(100%); } }
+@keyframes wqToastDown { from { opacity: 0; transform: translateY(-16px); } }
+
+@media (max-width: 700px) {
+  body { font-size: 14px; }
+  /* One slim top row: name, level, streak, distance, settings. XP shows as a thin line under it. */
+  .topbar { flex-wrap: nowrap; gap: 8px; padding: calc(8px + env(safe-area-inset-top)) max(12px, env(safe-area-inset-right)) 8px max(12px, env(safe-area-inset-left)); }
+  .brand { font-size: 13px; }
+  .player { gap: 6px; flex-wrap: nowrap; }
+  .xpwrap { display: none; }
+  .lvl { width: 34px; height: 34px; border-radius: 9px; box-shadow: none; }
+  .lvl small { font-size: 6px; } .lvl b { font-size: 12px; }
+  .stat { padding: 5px 8px; font-size: .85rem; }
+  .gear { display: block; }
+  .xpline { display: block; position: absolute; left: 0; right: 0; bottom: -1px; height: 3px; background: #0006; }
+  .xpline i { display: block; height: 100%; background: linear-gradient(90deg, var(--gold), #ff9f43); transition: width .6s; }
+
+  /* Sections move from the top tabs to a tab bar along the bottom. */
+  .tabs { display: none; }
+  .tabbar { display: grid; grid-template-columns: repeat(5, 1fr); position: fixed; left: 0; right: 0; bottom: 0; z-index: 30;
+    background: rgba(14, 16, 32, .96); backdrop-filter: blur(10px); border-top: 1px solid var(--line);
+    padding: 4px max(4px, env(safe-area-inset-left)) calc(6px + env(safe-area-inset-bottom)) max(4px, env(safe-area-inset-right)); }
+  .tabbar .tab { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 6px 0 4px; border-radius: 12px;
+    font-size: 11px; font-weight: 600; color: var(--muted); background: none; }
+  .tabbar .tab span { font-size: 20px; line-height: 1.1; filter: grayscale(.6); }
+  .tabbar .tab.active { color: var(--text); background: var(--card); }
+  .tabbar .tab.active span { filter: none; }
+  main { padding: 0 max(12px, env(safe-area-inset-right)) calc(84px + env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left)); }
+  .screen { padding-top: 12px; }
+  .screen.active { animation: none; }
+  .screen.wq-fwd { animation: wqFromRight .22s cubic-bezier(.2, .8, .2, 1); }
+  .screen.wq-back { animation: wqFromLeft .22s cubic-bezier(.2, .8, .2, 1); }
+  .section-title { font-size: 11px; margin: 20px 0 10px; }
+  .card { padding: 14px; border-radius: 14px; }
+
+  /* Home */
+  .device-head { margin-bottom: 10px; }
+  .device-head h2 { font-size: 1.1rem; margin: 0; }
+  .livespeed b { font-size: 20px; }
+  .device .row.wrap { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .device .row.wrap .btn { justify-content: center; padding: 11px 8px; }
+  #btn-connect { grid-column: 1 / -1; }
+  .warn { font-size: .85rem; }
+  .bounty { gap: 10px; }
+  .bounty-icon { font-size: 1.6rem; }
+  .quest-head { flex-direction: column; align-items: stretch; gap: 0; }
+  .filters { flex-wrap: nowrap; overflow-x: auto; margin: 0 -12px 12px; padding: 0 12px; scrollbar-width: none; }
+  .filters::-webkit-scrollbar { display: none; }
+  .filters .btn { flex: none; }
+  .mapcard svg { height: 118px; }
+  .lock { height: 118px; }
+  .mapcard-name { font-size: 12px; }
+  .mapcard-tag { min-height: 0; font-size: .85rem; }
+
+  /* Journey: the map runs edge to edge, Begin / the numbers right under it, then speed control and the story */
+  #screen-journey.active { display: flex; flex-direction: column; }
+  #screen-journey > * { order: 6; }
+  #screen-journey > .journey-head { order: 0; }
+  #screen-journey > .mapwrap { order: 1; }
+  #screen-journey > .progress { order: 2; }
+  #screen-journey > #idle-panel, #screen-journey > #active-panel { order: 3; }
+  #screen-journey > .speedctl { order: 4; }
+  #screen-journey > .nowpassing { order: 5; }
+  body.walking #screen-journey > .nowpassing { order: 3; }
+  body.walking #screen-journey > .speedctl { order: 4; }
+  body.walking #screen-journey > #active-panel { order: 5; }
+  .journey-head { gap: 10px; flex-wrap: nowrap; margin-bottom: 10px; }
+  .journey-head .btn { padding: 8px 10px; }
+  .journey-head h2 { font-size: 12px; }
+  .journey-head .devstatus { display: none; }
+  .mapwrap { margin: 0 -12px; border-radius: 0; border-width: 1px 0; }
+  .lmlabel { font-size: 22px; }
+  .encounter { flex-wrap: wrap; border-width: 0 0 2px; padding: 10px 12px; }
+  .enc-icon { font-size: 1.8rem; }
+  .enc-match { width: 100%; justify-content: center; padding: 10px; font-size: 1rem; }
+  .progress { margin: 10px 0; }
+  .nowpassing { font-size: .9rem; }
+  .hud { grid-template-columns: repeat(4, 1fr); gap: 6px; }
+  .hudbox { padding: 8px 4px; border-radius: 10px; }
+  .hudbox b { font-size: 12px; margin-bottom: 4px; }
+  .hudbox.main b { font-size: 16px; }
+  .hudbox span { font-size: .66rem; line-height: 1.2; display: block; }
+  .spd-row { gap: 6px; }
+  .btn.spd { font-size: 1rem; padding: 14px 4px; }
+  .spd-target b { font-size: 22px; }
+  .spd-presets .btn { padding: 8px 10px; }
+  .spd-note { display: none; }
+  .feeditem { padding: 9px 10px; font-size: .9rem; }
+  .routelist { grid-template-columns: 1fr 1fr; gap: 6px; }
+  .rl { padding: 8px; gap: 6px; }
+  .rl-name { font-size: .8rem; }
+
+  /* Toasts drop in from the top, full width, and leave on a tap. */
+  #toasts { top: calc(64px + env(safe-area-inset-top)); left: 12px; right: 12px; width: auto; gap: 6px; }
+  #toasts .toast:nth-last-child(n+3) { display: none; }
+  .toast { padding: 10px 12px; animation: wqToastDown .25s ease-out; }
+  .toast-icon { font-size: 1.3rem; }
+  .toast-body { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+
+  /* Pop-ups are bottom sheets: drag the handle (or anywhere at the top) down to close. */
+  .modal { place-items: end stretch; padding: 0; }
+  .modal-card { width: 100%; max-height: calc(100dvh - 24px - env(safe-area-inset-top)); border-radius: 20px 20px 0 0; border-width: 1px 0 0;
+    padding: 10px 16px calc(16px + env(safe-area-inset-bottom)); animation: wqSheetUp .28s cubic-bezier(.2, .8, .2, 1); overscroll-behavior: contain; }
+  .modal-card::before { content: ""; display: block; width: 40px; height: 4px; margin: 0 auto 12px; border-radius: 2px; background: var(--muted); opacity: .5; }
+  .modal-card .row.end .btn { flex: 1; justify-content: center; padding: 13px; }
+  .sum-icon { font-size: 2.4rem; }
+
+  .achievements, .records { grid-template-columns: 1fr 1fr; }
+  .achievements { grid-template-columns: 1fr; }
+  .colgrid { grid-template-columns: 1fr 1fr; }
+  .hist { gap: 10px; padding: 10px; }
+  .hist-date { width: 70px; font-size: .78rem; }
+  .settings input[type=number] { font-size: 16px; } /* no zoom-in on focus */
+}
+
+/* Phones (also sideways): during a walk the bottom bar becomes the walk bar: speed, distance, slower/faster, STOP. */
+@media (max-width: 700px), (max-height: 500px) and (orientation: landscape) {
+  body.walking .tabbar { display: none; }
+  /* During a walk the bottom bar becomes the walk bar: speed, distance, slower/faster, STOP. */
+  body.walking .walkbar:not([hidden]) { display: flex; }
+  .walkbar { position: fixed; left: 0; right: 0; bottom: 0; z-index: 31; align-items: center; gap: 10px;
+    background: rgba(14, 16, 32, .97); backdrop-filter: blur(10px); border-top: 2px solid var(--map-accent);
+    padding: 8px max(10px, env(safe-area-inset-right)) calc(8px + env(safe-area-inset-bottom)) max(10px, env(safe-area-inset-left)); }
+  .wb-stat { text-align: center; min-width: 52px; }
+  .walkbar:not(.noctl) .wb-time { display: none; }
+  .wb-stat b { display: block; font-family: var(--pixel); font-size: 15px; }
+  .wb-stat span, .wb-target span { color: var(--muted); font-size: .66rem; }
+  .wb-ctl { flex: 1; display: flex; align-items: center; justify-content: flex-end; gap: 6px; }
+  .wb-btn { width: 46px; height: 46px; justify-content: center; font-size: 1.5rem; padding: 0; }
+  .wb-target { text-align: center; min-width: 40px; }
+  .wb-target b { display: block; font-family: var(--pixel); font-size: 12px; }
+  .wb-stop { height: 46px; padding: 0 14px; font-size: 1rem; }
+  .walkbar.noctl .wb-ctl { display: none; }
+  .walkbar.noctl { justify-content: space-around; }
+  body.walking main { padding-bottom: calc(96px + env(safe-area-inset-bottom)); }
+
+}
+
+/* A phone lying on the treadmill console, sideways: map and numbers side by side. */
+@media (max-height: 500px) and (orientation: landscape) and (max-width: 1000px) {
+  .topbar { position: static; padding: calc(6px + env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) 6px max(16px, env(safe-area-inset-left)); }
+  .brand { font-size: 13px; }
+  .lvl { width: 32px; height: 32px; } .lvl b { font-size: 12px; } .lvl small { font-size: 6px; }
+  .xpwrap { width: 140px; }
+  .stat { padding: 4px 8px; font-size: .85rem; }
+  body.walking .tabs { display: none; }
+  body.walking .journey-head { margin-bottom: 8px; }
+  body.walking .journey-head h2 { font-size: 12px; }
+  body.walking main { padding-top: 0; }
+  body.walking .screen { padding-top: 8px; }
+  body.walking #screen-journey.active { display: grid; grid-template-columns: 1.15fr 1fr; gap: 0 14px; align-items: start; }
+  body.walking #screen-journey > * { grid-column: 2; }
+  body.walking #screen-journey > .journey-head { grid-column: 1 / -1; }
+  body.walking #screen-journey > .mapwrap { grid-column: 1; grid-row: 2 / span 6; position: sticky; top: 8px; margin: 0; border-radius: 14px; border-width: 1px; }
+}
