@@ -209,14 +209,17 @@
         <label>Highest speed you're comfortable at (km/h). Encounters never ask for more. <input type="number" id="set-max" min="3" max="20" step="0.5"></label>
         <label class="check"><input type="checkbox" id="set-sound"> Sound effects</label>
         <label class="check"><input type="checkbox" id="set-enc"> Encounters (short speed challenges during walks)</label>
+        <label class="check"><input type="checkbox" id="set-startbegin"> Start the belt when I begin a quest (if the treadmill accepts speed control)</label>
         <label class="check"><input type="checkbox" id="set-stopend"> Stop the belt when I end a walk (if the treadmill accepts speed control)</label>
         <label class="check"><input type="checkbox" id="set-unlock"> Unlock all maps</label>
         <label class="check"><input type="checkbox" id="set-debug"> Log raw Bluetooth data (for troubleshooting)</label>
       </div>
       <div class="card settings">
         <h3>Your data</h3>
-        <p class="muted">Everything is stored in this browser only. Export a backup to move it to another computer.</p>
+        <p class="muted">Progress is saved in this browser and, when WalkQuest runs on its server, on the server too, so your computer and phone stay in sync. Export a backup to keep a copy of your own.</p>
+        <p class="sync-status" id="sync-status"></p>
         <div class="row wrap">
+          <button class="btn" id="btn-sync" hidden>🔄 Sync now</button>
           <button class="btn" id="btn-export">⬇ Export backup</button>
           <label class="btn">⬆ Import backup <input type="file" id="file-import" accept="application/json" hidden></label>
           <button class="btn danger" id="btn-reset">Erase all progress</button>

@@ -261,7 +261,7 @@
     return v;
   }
   async function startBelt() {
-    if (state.kind === 'sim') { if (state.sim.speed < 0.5) state.sim.speed = 1; emit('control', { type: 'target', speed: state.sim.speed }); return; }
+    if (state.kind === 'sim') { if (state.sim.speed < 0.5) state.sim.speed = 3; emit('control', { type: 'target', speed: state.sim.speed }); return; }
     if (state.controlKind === 'ftms') return ftmsCommand([0x07], 'Start belt');
     throw new Error('Start the belt with the remote or the treadmill button.');
   }
@@ -277,7 +277,7 @@
     disconnect();
     const sim = state.sim;
     sim.distanceM = 0; sim.elapsed = 0; sim.last = performance.now();
-    if (!sim.speed) sim.speed = 4;
+    sim.speed = 0;
     state.simTimer = setInterval(() => {
       const now = performance.now();
       const dt = ((now - sim.last) / 1000) * sim.warp;

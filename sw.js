@@ -27,6 +27,7 @@ self.addEventListener('fetch', (e) => {
   const sameOrigin = url.origin === self.location.origin;
   const isFont = /fonts\.(googleapis|gstatic)\.com$/.test(url.hostname);
   if (!sameOrigin && !isFont) return;
+  if (sameOrigin && url.pathname.includes('/api/')) return; // progress sync always goes to the server
   e.respondWith(
     fetch(req)
       .then((res) => {

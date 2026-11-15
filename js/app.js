@@ -9,22 +9,63 @@
 
   // ================= Storage =================
   const KEY = 'walkquest.v1';
+  const SETTINGS = ['weightKg', 'maxSpeed', 'sound', 'unlockAll', 'encountersOn', 'stopOnEnd', 'startOnBegin'];
+  const newId = () => Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4);
+  // Each browser gets its own id, so its XP can be added to the other devices' XP when syncing.
+  const DEVICE = (() => { try { let d = localStorage.getItem('walkquest.device'); if (!d) { d = newId(); localStorage.setItem('walkquest.device', d); } return d; } catch (_) { return newId(); } })();
   const defaults = () => ({
     version: 1,
-    profile: { xp: 0, weightKg: 75, maxSpeed: 6, sound: true, unlockAll: false, encountersOn: true, stopOnEnd: true, encounterWins: 0, encounterTotal: 0 },
-    progress: {},     // mapId -> { distanceM, completions, landmarks: [idx], runCollect: [idx] }
+    epoch: newId(),   // changes when progress is erased or a backup restored, so other devices take that copy
+    settingsAt: 0,    // when settings last changed (newest wins when syncing)
+    profile: { xp: 0, weightKg: 75, maxSpeed: 6, sound: true, unlockAll: false, encountersOn: true, stopOnEnd: true, startOnBegin: true, encounterWins: 0, encounterTotal: 0 },
+    counters: {},     // deviceId -> { xp, wins, total }: each device only adds to its own; the profile shows the sums
+    progress: {},     // mapId -> { distanceM, completions, landmarks: [idx], runCollect: [idx], t: last change }
     collection: {},   // "mapId:idx" -> ISO date first found
     achievements: {}, // id -> ISO date
     codex: {},        // "mapId:idx" -> ISO date landmark first discovered
     bounties: {},     // "YYYY-MM-DD" -> ISO date completed
     history: []       // walk records
   });
+  const isObj = (x) => x && typeof x === 'object' && !Array.isArray(x);
+  function sumCounters(x) {
+    const t = { xp: 0, wins: 0, total: 0 };
+    for (const c of Object.values(x.counters)) for (const k in t) t[k] += Math.max(0, +c[k] || 0);
+    return t;
+  }
+  function applyCounters(x) { const t = sumCounters(x); x.profile.xp = t.xp; x.profile.encounterWins = t.wins; x.profile.encounterTotal = t.total; }
+  function normalize(d) {
+    const x = Object.assign(defaults(), isObj(d) ? d : {});
+    x.profile = Object.assign(defaults().profile, isObj(x.profile) ? x.profile : {});
+    for (const k of ['counters', 'progress', 'collection', 'achievements', 'codex', 'bounties']) if (!isObj(x[k])) x[k] = {};
+    if (!Array.isArray(x.history)) x.history = [];
+    // Saves from before syncing only kept totals in the profile: give them to this device.
+    const t = sumCounters(x), extra = { xp: x.profile.xp - t.xp, wins: x.profile.encounterWins - t.wins, total: x.profile.encounterTotal - t.total };
+    if (extra.xp > 0 || extra.wins > 0 || extra.total > 0) {
+      const c = (x.counters[DEVICE] = Object.assign({ xp: 0, wins: 0, total: 0 }, x.counters[DEVICE]));
+      for (const k in extra) if (extra[k] > 0) c[k] += extra[k];
+    }
+    applyCounters(x);
+    // Settings changed before syncing existed beat another device's untouched defaults.
+    if (!x.settingsAt && SETTINGS.some((k) => x.profile[k] !== defaults().profile[k])) x.settingsAt = 1;
+    for (const [mid, pr] of Object.entries(x.progress)) for (const i of pr.landmarks || []) { x.codex[`${mid}:${i}`] = x.codex[`${mid}:${i}`] || new Date().toISOString(); }
+    return x;
+  }
   let db;
-  try { db = Object.assign(defaults(), JSON.parse(localStorage.getItem(KEY) || '{}')); db.profile = Object.assign(defaults().profile, db.profile); }
-  catch (_) { db = defaults(); }
-  for (const [mid, pr] of Object.entries(db.progress)) for (const i of pr.landmarks || []) { db.codex[`${mid}:${i}`] = db.codex[`${mid}:${i}`] || new Date().toISOString(); }
-  const save = () => { try { localStorage.setItem(KEY, JSON.stringify(db)); } catch (_) {} };
-  const prog = (id) => (db.progress[id] = db.progress[id] || { distanceM: 0, completions: 0, landmarks: [], runCollect: [] });
+  try { db = normalize(JSON.parse(localStorage.getItem(KEY) || '{}')); }
+  catch (_) { db = normalize({}); }
+  const save = () => { try { localStorage.setItem(KEY, JSON.stringify(db)); } catch (_) {} syncChanged(); };
+  const prog = (id) => (db.progress[id] = db.progress[id] || { distanceM: 0, completions: 0, landmarks: [], runCollect: [], t: 0 });
+  const touch = (p) => { p.t = Date.now(); return p; };
+  const myCounter = () => (db.counters[DEVICE] = db.counters[DEVICE] || { xp: 0, wins: 0, total: 0 });
+  function bump(k, n = 1) { myCounter()[k] += n; applyCounters(db); }
+  function setPref(k, v) { db.profile[k] = v; db.settingsAt = Date.now(); save(); }
+  // Sync bookkeeping (the sync code itself is further down): server revision we last saw,
+  // whether this device has changes the server doesn't have yet, and a pending replace.
+  const SYNC_KEY = 'walkquest.sync';
+  let meta;
+  try { meta = JSON.parse(localStorage.getItem(SYNC_KEY) || '{}') || {}; } catch (_) { meta = {}; }
+  const saveMeta = () => { try { localStorage.setItem(SYNC_KEY, JSON.stringify(meta)); } catch (_) {} };
+  const sync = { mode: /^https?:$/.test(location.protocol) ? 'starting' : 'off', busy: false, again: false, timer: null, edits: 0, error: '' };
 
   // ================= Derived stats =================
   const levelFor = (xp) => Math.floor(Math.sqrt(xp / 120)) + 1;
@@ -230,7 +271,7 @@
   function addXp(n, why) {
     if (n <= 0) return;
     const before = levelFor(db.profile.xp);
-    db.profile.xp += n;
+    bump('xp', n);
     if (session) session.xp += n;
     const after = levelFor(db.profile.xp);
     if (after > before) { const r = rankFor(after); toast('🆙', `Level ${after}!`, r !== rankFor(before) ? `New rank: ${r}.` : `${xpForLevel(after + 1) - db.profile.xp} XP to the next level.`, 'gold'); SFX.level(); }
@@ -267,14 +308,21 @@
   // ================= Speed control =================
   let targetSpeed = null, sendTimer = null, sending = false;
   const maxAllowed = () => Math.min(db.profile.maxSpeed, Dev.state.range.max);
+  const beltMoving = () => (live.speed || 0) > 0.2;
+  const inWalk = () => !!(session && !session.done);
+  // Speed control belongs to a quest: shown during a walk, or (to slow down / stop) whenever the
+  // belt is moving. The belt is only started from inside a quest (Begin quest, or Start belt
+  // while a walk is on and the belt is stopped).
+  function speedCtlActive() { const st = Dev.state; return st.connected && st.canControl && (inWalk() || beltMoving()); }
   function renderSpeedCtl() {
-    const st = Dev.state, on = st.connected && st.canControl;
+    const st = Dev.state, on = speedCtlActive(), moving = beltMoving();
     $$('.speedctl').forEach((el) => {
       el.hidden = !on;
       if (!on) return;
       $('.spd-val', el).textContent = targetSpeed == null ? '–' : targetSpeed.toFixed(1);
-      $('.spd-kind', el).textContent = st.controlKind === 'fitshow' ? 'experimental for this treadmill' : st.controlKind === 'sim' ? 'simulator' : '';
-      $('.spd-start', el).hidden = !st.canStart;
+      $('.spd-kind', el).innerHTML = `<span class="beltstate ${moving ? 'on' : ''}">${moving ? `Belt running · ${(live.speed || 0).toFixed(1)} km/h` : 'Belt stopped'}</span>${st.controlKind === 'fitshow' ? ' · experimental' : st.controlKind === 'sim' ? ' · simulator' : ''}`;
+      const canStartHere = st.canStart && inWalk() && !moving;
+      $('.spd-start', el).hidden = !canStartHere;
       const max = maxAllowed();
       const presets = [2, 3, 3.5, 4, 4.5, 5, 5.5, 6, 7, 8].filter((v) => v <= max && v >= st.range.min);
       const key = presets.join(',') + '|' + targetSpeed;
@@ -341,6 +389,7 @@
     if (s.speed === null || s.speed === undefined) live.speed = prev.speed;
     if (session && !session.done) tick(s, dt);
     renderHud();
+    renderSpeedCtl();
   });
 
   // ================= Session (a walk) =================
@@ -366,7 +415,7 @@
       nextEncounterM: 300 + Math.random() * 300, kcalStart: null, steps0: null, done: false, completed: false
     };
     if (!p.landmarks.includes(0)) { p.landmarks.push(0); }
-    save();
+    touch(p); save();
     requestWakeLock();
     beep([[392, 0.1], [523, 0.15]]);
     if (!db.codex[`${m.id}:0`]) db.codex[`${m.id}:0`] = new Date().toISOString();
@@ -375,6 +424,8 @@
       if (m.intro) feed('📖', esc(m.intro), 'lore', true);
     } else feed('🔖', `You pick up the trail at ${fmtKm(session.startProgressM)} km.`, 'lore');
     document.body.classList.add('walking');
+    if (db.profile.startOnBegin && Dev.state.connected && Dev.state.canControl && Dev.state.canStart && !beltMoving()) belt('start');
+    else if (Dev.state.connected && !Dev.state.canStart && !beltMoving()) toast('▶️', 'Start the belt', 'Use the treadmill remote to start walking.');
     renderJourneyActive();
   }
 
@@ -402,7 +453,7 @@
     const before = session.startProgressM + session.distanceM;
     session.distanceM += d;
     const after = Math.min(len, session.startProgressM + session.distanceM);
-    p.distanceM = after;
+    p.distanceM = after; touch(p);
 
     // XP for every 100 m walked (10 XP)
     const hundreds = Math.floor(session.distanceM / 100);
@@ -459,7 +510,7 @@
         const target = Math.min(db.profile.maxSpeed, Math.max(2.5, Math.ceil((base + 0.4) * 2) / 2));
         const pick = m.encounters[Math.floor(Math.random() * m.encounters.length)];
         session.encounter = { ...pick, target, need: 60, held: 0, left: 120 };
-        db.profile.encounterTotal++; save();
+        bump('total'); save();
         SFX.danger();
         feed(pick.icon, `${esc(pick.text)} Hold <b>${target.toFixed(1)} km/h</b> for 60 s.`, 'danger', true);
       }
@@ -468,7 +519,7 @@
     if (speed >= e.target - 0.05) e.held += dt;
     e.left -= dt;
     if (e.held >= e.need) {
-      session.encounter = null; session.encounters.won++; db.profile.encounterWins++;
+      session.encounter = null; session.encounters.won++; bump('wins');
       session.nextEncounterM = session.distanceM + 400 + Math.random() * 400;
       SFX.win(); addXp(60, true); toast('💨', 'You escaped!', '+60 XP for outpacing the danger.', 'good');
       feed('💨', 'You escaped. Heart still pounding.', 'good');
@@ -483,7 +534,7 @@
 
   function completeMap(m) {
     const p = prog(m.id);
-    session.completed = true; p.completions++;
+    session.completed = true; p.completions++; touch(p);
     const bonus = Math.round(100 * m.km);
     const last = m.landmarks[m.landmarks.length - 1];
     SFX.clear(); addXp(bonus, true);
@@ -500,7 +551,7 @@
     const m = MAPS.find((x) => x.id === session.mapId);
     session.done = true;
     const rec = {
-      id: Date.now().toString(36), date: new Date().toISOString(), startedAt: session.startedAt, mapId: m.id,
+      id: Date.now().toString(36) + DEVICE.slice(0, 3), date: new Date().toISOString(), startedAt: session.startedAt, mapId: m.id,
       distanceM: Math.round(session.distanceM), movingS: Math.round(session.movingS), xp: session.xp,
       kcal: Math.round(session.kcalDev != null && session.kcalDev > 0 ? session.kcalDev : estKcal(session.distanceM)),
       steps: session.steps || null, items: session.items.length, landmarks: session.landmarks.length,
@@ -514,6 +565,7 @@
     const fresh = rec.distanceM >= 50 ? checkAchievements() : [];
     fresh.forEach((a) => addXp(50));
     session = null;
+    syncNow();
     document.body.classList.remove('walking');
     $('#walkbar').hidden = true;
     releaseWakeLock();
@@ -839,7 +891,156 @@
     $('#set-sound').checked = db.profile.sound;
     $('#set-enc').checked = db.profile.encountersOn;
     $('#set-stopend').checked = db.profile.stopOnEnd;
+    $('#set-startbegin').checked = db.profile.startOnBegin;
     $('#set-unlock').checked = db.profile.unlockAll;
+    renderSyncStatus();
+  }
+
+  // ================= Sync with the WalkQuest server =================
+  // When the app is served by server.py, progress is also kept on the server, so a walk on
+  // the computer shows up on the phone and the other way round. Devices merge instead of
+  // overwriting each other: walks, finds, places and trophies are combined, XP adds up, and
+  // on each map the most recent progress wins. With no server (a local file or a plain
+  // static host) everything simply stays in this browser, as before.
+  const API = 'api/state';
+  // JSON with sorted keys, to tell whether two copies really differ.
+  const canon = (v) => JSON.stringify(v, (k, x) => (isObj(x) ? Object.keys(x).sort().reduce((o, key) => ((o[key] = x[key]), o), {}) : x));
+  const earliest = (a, b) => { const o = Object.assign({}, b); for (const [k, v] of Object.entries(a)) if (!o[k] || v < o[k]) o[k] = v; return o; };
+  function mergeDocs(a, b, keepMap) { // a: this device, b: the server's copy
+    const prefs = (a.settingsAt || 0) > (b.settingsAt || 0) ? a : b;
+    const out = Object.assign({}, b, { epoch: b.epoch, settingsAt: prefs.settingsAt || 0, profile: Object.assign({}, b.profile) });
+    for (const k of SETTINGS) out.profile[k] = prefs.profile[k];
+    out.counters = {};
+    for (const id of new Set([...Object.keys(a.counters), ...Object.keys(b.counters)])) {
+      const x = a.counters[id] || {}, y = b.counters[id] || {};
+      out.counters[id] = { xp: Math.max(+x.xp || 0, +y.xp || 0), wins: Math.max(+x.wins || 0, +y.wins || 0), total: Math.max(+x.total || 0, +y.total || 0) };
+    }
+    for (const k of ['collection', 'achievements', 'codex', 'bounties']) out[k] = earliest(a[k], b[k]);
+    out.progress = {};
+    for (const id of new Set([...Object.keys(a.progress), ...Object.keys(b.progress)])) {
+      const x = a.progress[id], y = b.progress[id];
+      let w = !x ? y : !y ? x : id === keepMap ? x
+        : (x.t || 0) !== (y.t || 0) ? ((x.t || 0) > (y.t || 0) ? x : y)
+        : (x.distanceM || 0) > (y.distanceM || 0) ? x : y;
+      w = JSON.parse(JSON.stringify(w));
+      if (x && y) w.completions = Math.max(x.completions || 0, y.completions || 0);
+      out.progress[id] = w;
+    }
+    const walks = new Map();
+    for (const h of [...b.history, ...a.history]) if (h && h.id && !walks.has(h.id)) walks.set(h.id, h);
+    out.history = [...walks.values()].sort((p, q) => (p.date < q.date ? 1 : p.date > q.date ? -1 : p.id < q.id ? 1 : p.id > q.id ? -1 : 0));
+    applyCounters(out);
+    return out;
+  }
+  function syncChanged() {
+    sync.edits++;
+    if (!meta.dirty) { meta.dirty = true; saveMeta(); }
+    scheduleSync(session ? 20000 : 2500); // during a walk, send at most every 20 s
+  }
+  function scheduleSync(ms) {
+    if (sync.mode === 'off' || sync.timer) return;
+    sync.timer = setTimeout(() => { sync.timer = null; syncNow(); }, ms);
+  }
+  async function api(method, body, keepalive) {
+    const res = await fetch(API, {
+      method, cache: 'no-store', keepalive: !!keepalive,
+      headers: body ? { 'Content-Type': 'application/json' } : {}, body: body ? JSON.stringify(body) : undefined
+    });
+    // A static host answers with a page or a 404 page, not JSON: then there is no server to sync with.
+    if (!(res.headers.get('Content-Type') || '').includes('json')) { const e = new Error('no sync server'); e.noServer = true; throw e; }
+    return { status: res.status, data: await res.json() };
+  }
+  // Fold the server's copy into ours.
+  function integrate(remote) {
+    meta.rev = remote.rev;
+    if (!remote.doc) { meta.dirty = true; return; } // server has nothing yet: send ours
+    const theirs = normalize(remote.doc);
+    const before = canon(db), walksBefore = db.history.length, xpBefore = db.profile.xp;
+    const keep = session ? session.mapId : null;
+    let next, replaced = false;
+    if (meta.epoch && theirs.epoch !== meta.epoch && theirs.epoch !== db.epoch) {
+      // Progress was erased or a backup restored on another device: take that copy.
+      next = theirs; replaced = true;
+      if (keep && db.progress[keep]) next.progress[keep] = db.progress[keep];
+    } else next = mergeDocs(db, theirs, keep);
+    db = next;
+    meta.epoch = db.epoch;
+    meta.dirty = canon(db) !== canon(theirs); // we still have something the server doesn't
+    try { localStorage.setItem(KEY, JSON.stringify(db)); } catch (_) {}
+    if (canon(db) !== before) {
+      if (replaced) toast('🔄', 'Progress replaced', 'It was erased or restored from a backup on another device.');
+      else if (db.history.length > walksBefore || db.profile.xp > xpBefore) toast('🔄', 'Synced', 'Walks and XP from your other devices are here now.');
+      refreshAfterSync();
+    }
+  }
+  function refreshAfterSync() {
+    renderHeader();
+    if (session) return;
+    const r = { home: renderMaps, trophies: renderTrophies, collection: renderCollection, journal: renderJournal, codex: renderCodex, settings: renderSettings }[currentScreen];
+    if (r) r();
+    if (currentScreen === 'journey' && currentMap) { shownFrac = Math.min(1, prog(currentMap.id).distanceM / (currentMap.km * 1000)); placeAvatar(shownFrac); renderMarkers(); renderJourneyIdle(); }
+  }
+  async function syncNow() {
+    if (sync.mode === 'off') return;
+    if (sync.busy) { sync.again = true; return; }
+    if (sync.timer) { clearTimeout(sync.timer); sync.timer = null; }
+    sync.busy = true;
+    try {
+      for (let tries = 0; tries < 5; tries++) {
+        if (meta.force) { // erase / restore: replace what the server has
+          const r = await api('PUT', { baseRev: meta.rev || 0, doc: db, force: true });
+          if (r.status !== 200) throw new Error(r.data.error || `HTTP ${r.status}`);
+          Object.assign(meta, { rev: r.data.rev, epoch: db.epoch, force: false, dirty: false });
+          break;
+        }
+        if (!meta.dirty) {
+          const r = await api('GET');
+          if (r.status !== 200) throw new Error(r.data.error || `HTTP ${r.status}`);
+          if (r.data.rev !== meta.rev || !r.data.doc) integrate(r.data);
+          if (!meta.dirty) break;
+          continue;
+        }
+        const edits = sync.edits;
+        const r = await api('PUT', { baseRev: meta.rev || 0, doc: db });
+        if (r.status === 200) { meta.rev = r.data.rev; meta.epoch = db.epoch; meta.dirty = sync.edits !== edits; break; }
+        if (r.status === 409) { integrate(r.data); continue; } // another device saved first
+        throw new Error(r.data.error || `HTTP ${r.status}`);
+      }
+      meta.at = Date.now();
+      sync.mode = 'ok'; sync.error = '';
+      if (sync.manual) toast('🔄', 'Synced', 'Your progress is up to date on the server.');
+    } catch (e) {
+      sync.mode = e.noServer ? 'off' : 'offline'; sync.error = e.message;
+      if (sync.manual) toast('⚠️', e.noServer ? 'No sync server' : 'Sync failed', e.noServer ? 'This copy of WalkQuest is not running on the WalkQuest server.' : 'Progress is saved here and will sync when the server is reachable.', 'bad');
+    } finally {
+      sync.busy = false; sync.manual = false;
+      saveMeta(); renderSyncStatus();
+      if (sync.again) { sync.again = false; syncNow(); }
+      else if (meta.dirty && sync.mode === 'ok') scheduleSync(session ? 20000 : 2500);
+    }
+  }
+  // Leaving the page or switching apps: send unsent progress right away, without waiting for an answer.
+  function flushSync() {
+    if (sync.mode === 'off' || sync.busy || !(meta.dirty || meta.force)) return;
+    const body = { baseRev: meta.rev || 0, doc: db, force: !!meta.force };
+    const big = JSON.stringify(body).length > 60000; // browsers cap keepalive requests at 64 KB
+    const edits = sync.edits;
+    api('PUT', body, !big).then((r) => {
+      if (r.status === 200) { Object.assign(meta, { rev: r.data.rev, epoch: db.epoch, force: false, dirty: sync.edits !== edits }); saveMeta(); }
+    }).catch(() => {});
+  }
+  function renderSyncStatus() {
+    const el = $('#sync-status'); if (!el) return;
+    const when = meta.at ? new Date(meta.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
+    const text = {
+      off: '💾 Saved in this browser only. Open WalkQuest from the WalkQuest server (server.py) on each device to sync them.',
+      starting: '🔄 Connecting to the server…',
+      ok: `✅ Synced with the server${when ? ` at ${when}` : ''}. Walks, XP and finds are shared with your other devices.`,
+      offline: '📴 Can\'t reach the server right now. Progress is saved here and syncs when it\'s back.'
+    }[sync.mode];
+    el.textContent = text;
+    el.className = 'sync-status ' + sync.mode;
+    const b = $('#btn-sync'); if (b) b.hidden = sync.mode === 'off';
   }
 
   // ================= Navigation =================
@@ -910,7 +1111,7 @@
     });
     $('#btn-connect').onclick = () => connect(false);
     $('#btn-connect-all').onclick = () => connect(true);
-    $('#btn-sim').onclick = () => { Dev.startSim(); toast('🕹️', 'Simulator on', 'Use the speed controls to walk faster or slower. 10× and 60× speed up time for testing.'); };
+    $('#btn-sim').onclick = () => { Dev.startSim(); toast('🕹️', 'Simulator on', 'Pick a quest and press Begin: the simulated belt starts at 3 km/h. 10× and 60× speed up time for testing.'); };
     $('#btn-disconnect').onclick = () => Dev.disconnect();
     document.addEventListener('click', (e) => {
       const b = e.target.closest('[data-spd],[data-spdset],[data-belt],#enc-match');
@@ -923,21 +1124,23 @@
     document.addEventListener('keydown', (e) => {
       if (!Dev.state.connected || !Dev.state.canControl) return;
       if (e.target.closest && e.target.closest('input, textarea, select')) return;
+      if (e.key !== 'Escape' && !speedCtlActive()) return;
       if (e.key === 'Escape') { e.preventDefault(); belt('stop'); }
       else if (e.key === 'ArrowUp') { e.preventDefault(); nudgeSpeed(e.shiftKey ? 0.5 : 0.1); }
       else if (e.key === 'ArrowDown') { e.preventDefault(); nudgeSpeed(e.shiftKey ? -0.5 : -0.1); }
     });
     $('#btn-start').onclick = startWalk;
-    $('#btn-restart').onclick = () => { const p = prog(currentMap.id); p.distanceM = 0; p.landmarks = []; p.runCollect = []; save(); shownFrac = 0; renderMarkers(); renderJourneyIdle(); };
+    $('#btn-restart').onclick = () => { const p = prog(currentMap.id); p.distanceM = 0; p.landmarks = []; p.runCollect = []; touch(p); save(); shownFrac = 0; renderMarkers(); renderJourneyIdle(); };
     $('#btn-end').onclick = () => { if (session.completed || confirm('End this walk? Your progress on the map is kept.')) endWalk(); };
     $('#btn-back').onclick = () => { if (session && !confirmLeave()) return; show('home'); };
     $$('[data-warp]').forEach((b) => (b.onclick = () => { Dev.setSim({ warp: +b.dataset.warp }); $$('[data-warp]').forEach((x) => x.classList.toggle('active', x === b)); }));
-    $('#set-weight').onchange = (e) => { db.profile.weightKg = Math.max(30, Math.min(250, +e.target.value || 75)); save(); };
-    $('#set-max').onchange = (e) => { db.profile.maxSpeed = Math.max(3, Math.min(20, +e.target.value || 6)); save(); renderSpeedCtl(); };
-    $('#set-sound').onchange = (e) => { db.profile.sound = e.target.checked; save(); };
-    $('#set-enc').onchange = (e) => { db.profile.encountersOn = e.target.checked; save(); };
-    $('#set-stopend').onchange = (e) => { db.profile.stopOnEnd = e.target.checked; save(); };
-    $('#set-unlock').onchange = (e) => { db.profile.unlockAll = e.target.checked; save(); };
+    $('#set-weight').onchange = (e) => { setPref('weightKg', Math.max(30, Math.min(250, +e.target.value || 75))); };
+    $('#set-max').onchange = (e) => { setPref('maxSpeed', Math.max(3, Math.min(20, +e.target.value || 6))); renderSpeedCtl(); };
+    $('#set-sound').onchange = (e) => { setPref('sound', e.target.checked); };
+    $('#set-enc').onchange = (e) => { setPref('encountersOn', e.target.checked); };
+    $('#set-stopend').onchange = (e) => { setPref('stopOnEnd', e.target.checked); };
+    $('#set-startbegin').onchange = (e) => { setPref('startOnBegin', e.target.checked); };
+    $('#set-unlock').onchange = (e) => { setPref('unlockAll', e.target.checked); };
     $('#set-debug').onchange = (e) => { window.WQ_DEBUG = e.target.checked; };
     $('#btn-export').onclick = () => {
       const blob = new Blob([JSON.stringify(db, null, 2)], { type: 'application/json' });
@@ -945,16 +1148,25 @@
     };
     $('#file-import').onchange = async (e) => {
       const f = e.target.files[0]; if (!f) return;
-      try { const data = JSON.parse(await f.text()); if (!data.profile || !Array.isArray(data.history)) throw new Error('Not a WalkQuest backup'); db = Object.assign(defaults(), data); save(); toast('📥', 'Backup restored', `${db.history.length} walks loaded.`); renderHeader(); renderSettings(); }
+      try { const data = JSON.parse(await f.text()); if (!data.profile || !Array.isArray(data.history)) throw new Error('Not a WalkQuest backup'); db = normalize(data); db.epoch = newId(); meta.force = true; saveMeta(); save(); syncNow(); toast('📥', 'Backup restored', `${db.history.length} walks loaded.`); renderHeader(); renderSettings(); }
       catch (err) { toast('⚠️', 'Import failed', err.message, 'bad'); }
     };
-    $('#btn-reset').onclick = () => { if (confirm('Erase ALL WalkQuest progress on this browser? This cannot be undone.')) { db = defaults(); save(); renderHeader(); renderSettings(); toast('🧹', 'Progress erased', ''); } };
+    $('#btn-reset').onclick = () => {
+      const msg = sync.mode === 'off' ? 'Erase ALL WalkQuest progress on this browser? This cannot be undone.' : 'Erase ALL WalkQuest progress, here and on your other devices? This cannot be undone.';
+      if (confirm(msg)) { db = normalize({}); meta.force = true; saveMeta(); save(); syncNow(); renderHeader(); renderSettings(); toast('🧹', 'Progress erased', ''); }
+    };
+    $('#btn-sync').onclick = () => { sync.manual = true; syncNow(); };
+    document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') syncNow(); else flushSync(); });
+    window.addEventListener('pagehide', flushSync);
+    window.addEventListener('online', () => syncNow());
+    setInterval(() => { if (document.visibilityState === 'visible') syncNow(); }, 60000);
     window.addEventListener('beforeunload', (e) => { if (session && session.distanceM > 20) { e.preventDefault(); e.returnValue = ''; } });
 
     renderHeader();
     renderDevice();
     show('home');
     requestAnimationFrame(frame);
+    syncNow();
   }
   function confirmLeave() {
     if (!session) return true;
@@ -962,6 +1174,6 @@
     endWalk(); return true;
   }
 
-  window.WalkQuest = { get db() { return db; }, get session() { return session; } };
+  window.WalkQuest = { get db() { return db; }, get session() { return session; }, get sync() { return Object.assign({}, sync, { meta }); }, syncNow, mergeDocs };
   document.addEventListener('DOMContentLoaded', init);
 })();
